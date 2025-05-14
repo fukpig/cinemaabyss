@@ -1,0 +1,85 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Container diagram for CinemaAbyss Microservices
+
+Person_Ext(user_mobile, "Mobile User", "Uses CinemaAbyss via Mobile App")
+Person_Ext(user_web, "Web User", "Uses CinemaAbyss via Web Browser")
+Person_Ext(user_tv, "Smart TV User", "Uses CinemaAbyss via Smart TV App")
+
+System_Ext(recommendation_system, "Recommendation System", "External system providing movie recommendations")
+
+System_Boundary(c1, "CinemaAbyss") {
+    Container(api_gateway, "API Gateway", "Go / Nginx+Lua / etc.", "Routes requests, handles auth, implements Strangler Fig pattern")
+    ContainerQueue(kafka, "Kafka Cluster", "Apache Kafka", "Event bus for asynchronous communication")
+
+    System_Boundary(c_users, "User Domain") {
+        Container(user_service, "User Service", "Go", "Manages user accounts and authentication")
+        ContainerDb(user_db, "User DB", "PostgreSQL", "Stores user information")
+    }
+
+    System_Boundary(c_movies, "Movie Domain") {
+        Container(movie_service, "Movie Service", "Go", "Manages movie metadata (info, genres, actors)")
+        ContainerDb(movie_db, "Movie DB", "PostgreSQL", "Stores movie metadata")
+        Container(rating_service, "Rating Service", "Go", "Manages user ratings for movies")
+        ContainerDb(rating_db, "Rating DB", "PostgreSQL", "Stores movie ratings")
+        Container(favorite_service, "Favorite Service", "Go", "Manages user favorite movie lists")
+        ContainerDb(favorite_db, "Favorite DB", "PostgreSQL", "Stores user favorites")
+    }
+
+    System_Boundary(c_billing, "Billing Domain") {
+        Container(payment_service, "Payment Service", "Go", "Handles payment processing")
+        ContainerDb(payment_db, "Payment DB", "PostgreSQL", "Stores payment transaction history")
+        Container(subscription_service, "Subscription Service", "Go", "Manages user subscriptions and discounts")
+        ContainerDb(subscription_db, "Subscription DB", "PostgreSQL", "Stores subscription status")
+    }
+
+    Container(recommendation_wrapper, "Recommendation Wrapper", "Go", "Interacts with the external recommendation system")
+
+}
+
+' Relationships - Users to Gateway
+Rel(user_mobile, api_gateway, "Uses", "HTTPS/JSON")
+Rel(user_web, api_gateway, "Uses", "HTTPS/JSON")
+Rel(user_tv, api_gateway, "Uses", "HTTPS/JSON")
+
+' Relationships - Gateway to Services
+Rel(api_gateway, user_service, "Routes auth/user requests to", "REST/gRPC")
+Rel(api_gateway, movie_service, "Routes movie metadata requests to", "REST/gRPC")
+Rel(api_gateway, rating_service, "Routes rating requests to", "REST/gRPC")
+Rel(api_gateway, favorite_service, "Routes favorite requests to", "REST/gRPC")
+Rel(api_gateway, payment_service, "Routes payment requests to", "REST/gRPC")
+Rel(api_gateway, subscription_service, "Routes subscription requests to", "REST/gRPC")
+Rel(api_gateway, recommendation_wrapper, "Requests recommendations from", "REST/gRPC")
+
+' Relationships - Service to DB
+Rel(user_service, user_db, "Reads/Writes", "SQL")
+Rel(movie_service, movie_db, "Reads/Writes", "SQL")
+Rel(rating_service, rating_db, "Reads/Writes", "SQL")
+Rel(favorite_service, favorite_db, "Reads/Writes", "SQL")
+Rel(payment_service, payment_db, "Reads/Writes", "SQL")
+Rel(subscription_service, subscription_db, "Reads/Writes", "SQL")
+
+' Relationships - Service to Kafka (Publish)
+Rel_Neighbor(user_service, kafka, "Publishes events (UserRegistered, etc.)")
+Rel_Neighbor(movie_service, kafka, "Publishes events (MovieAdded, etc.)")
+Rel_Neighbor(rating_service, kafka, "Publishes events (MovieRated)")
+Rel_Neighbor(favorite_service, kafka, "Publishes events (MovieAddedToFavorites)")
+Rel_Neighbor(payment_service, kafka, "Publishes events (PaymentSucceeded, etc.)")
+Rel_Neighbor(subscription_service, kafka, "Publishes events (SubscriptionStarted, etc.)")
+
+' Relationships - Service to Kafka (Subscribe) - Example
+Rel(kafka, subscription_service, "Consumes events (PaymentSucceeded)", "Kafka Topic")
+Rel(kafka, rating_service, "Consumes events (MovieAdded, UserRegistered)", "Kafka Topic")
+' ... other subscriptions omitted for brevity
+
+' Relationships - Inter-service (Synchronous - Example)
+Rel(subscription_service, payment_service, "Initiates payment via", "REST/gRPC")
+Rel(subscription_service, user_service, "Gets user data via", "REST/gRPC")
+Rel(movie_service, rating_service, "Gets average rating via", "REST/gRPC") ' Example
+
+' Relationships - External Systems
+Rel(recommendation_wrapper, recommendation_system, "Gets recommendations from", "API Call")
+@enduml

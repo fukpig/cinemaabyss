@@ -24,8 +24,11 @@ services:
 
   # ZooKeeper for Kafka
   zookeeper:
-    image: wurstmeister/zookeeper:latest
-    container_name: cinemaabyss-zookeeper
+    image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
     ports:
       - "2181:2181"
     networks:
@@ -33,12 +36,13 @@ services:
 
   # Kafka
   kafka:
-    image: wurstmeister/kafka:2.13-2.7.0
-    container_name: cinemaabyss-kafka
+    image: confluentinc/cp-kafka:latest
+    hostname: kafka
+    ports:
+      - "19092:19092"
+      - "9092:9092"
     depends_on:
       - zookeeper
-    ports:
-      - "9092:9092"
     environment:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
@@ -47,6 +51,12 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list > /dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
     networks:
       - cinemaabyss-network
 
@@ -88,11 +98,11 @@ services:
       context: ./src/microservices/events
       dockerfile: Dockerfile
     container_name: cinemaabyss-events-service
-    depends_on:
-      - postgres
-      - kafka
     ports:
       - "8082:8082"
+    depends_on:
+      kafka:
+        condition: service_healthy
     environment:
       PORT: 8082
       KAFKA_BROKERS: kafka:9092
