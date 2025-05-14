@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: proxy-service
+  namespace: cinemaabyss
+  labels:
+    app: proxy-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: proxy-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: proxy-service
+    spec:
+      containers:
+      - name: proxy-service
+        image: ghcr.io/fukpig/cinemaabyss/proxy-service:latest # Adjust if your image path is different
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000 # The port your proxy application listens on
+        env:
+        - name: PORT
+          value: "8000"
+        # Other necessary environment variables like MONOLITH_URL, MOVIES_SERVICE_URL,
+        # EVENTS_SERVICE_URL, GRADUAL_MIGRATION, MOVIES_MIGRATION_PERCENT
+        # are expected to be sourced from the cinemaabyss-config ConfigMap.
+        envFrom:
+        - configMapRef:
+            name: cinemaabyss-config
+        - secretRef: # Included for consistency, though proxy might not directly use DB secrets
+            name: cinemaabyss-secrets
+        resources: # Adjust based on expected load
+          limits:
+            cpu: "300m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+        readinessProbe:
+          httpGet:
+            path: / # Assuming the root path can serve as a health check
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: / # Assuming the root path can serve as a health check
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+      restartPolicy: Always
+      imagePullSecrets:
+        - name: dockerconfigjson
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: proxy-service
+  namespace: cinemaabyss
+  labels:
+    app: proxy-service
+spec:
+  selector:
+    app: proxy-service
+  ports:
+  - name: http
+    port: 80       # Port the Service will expose (e.g., for Ingress)
+    targetPort: 8000 # Port on the pods (must match containerPort)
+  type: ClusterIP
